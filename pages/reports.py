@@ -44,7 +44,7 @@ def _load_report_data() -> pd.DataFrame:
     # Parse fecha_hallazgo to datetime
     if "fecha_hallazgo" in df.columns:
         df["fecha_hallazgo"] = pd.to_datetime(df["fecha_hallazgo"], errors="coerce")
-        df["mes"] = df["fecha_hallazgo"].dt.to_period("M").astype(str)
+        df["mes"] = df["fecha_hallazgo"].dt.tz_localize(None).dt.to_period("M").astype(str)
 
     # Fill NaN for grouping columns
     for col in ("causa", "tipo_impacto", "numero_proyecto", "responsable", "status"):
@@ -58,37 +58,38 @@ def _load_report_data() -> pd.DataFrame:
 # Pareto Chart
 # ======================================================================
 
-def _render_pareto(df: pd.DataFrame) -> None:
-    """Render Pareto chart of causes."""
-    if "causa" not in df.columns or df.empty:
-        st.info("No hay datos para el gráfico Pareto.")
+def _render_pareto(
+    df: pd.DataFrame,
+    column: str = "causa",
+    title: str = "Pareto de Causas",
+    bar_color: str = "#0078D4",
+) -> None:
+    """Render a generic Pareto chart for any categorical column."""
+    if column not in df.columns or df.empty:
+        st.info(f"No hay datos para {title}.")
         return
 
-    # Count by causa, sorted descending
-    counts = df["causa"].value_counts().reset_index()
-    counts.columns = ["Causa", "Cantidad"]
+    counts = df[column].value_counts().reset_index()
+    counts.columns = ["Categoría", "Cantidad"]
     counts = counts.sort_values("Cantidad", ascending=False).reset_index(drop=True)
 
-    # Cumulative percentage
     total = counts["Cantidad"].sum()
     counts["Acumulado"] = counts["Cantidad"].cumsum()
     counts["% Acumulado"] = (counts["Acumulado"] / total * 100).round(1)
 
     fig = go.Figure()
 
-    # Bars
     fig.add_trace(go.Bar(
-        x=counts["Causa"],
+        x=counts["Categoría"],
         y=counts["Cantidad"],
         name="Cantidad",
-        marker_color="#0078D4",
+        marker_color=bar_color,
         text=counts["Cantidad"],
         textposition="outside",
     ))
 
-    # Cumulative line
     fig.add_trace(go.Scatter(
-        x=counts["Causa"],
+        x=counts["Categoría"],
         y=counts["% Acumulado"],
         name="% Acumulado",
         yaxis="y2",
@@ -101,9 +102,9 @@ def _render_pareto(df: pd.DataFrame) -> None:
     ))
 
     fig.update_layout(
-        title="Pareto de Causas",
-        xaxis_title="Causa",
-        yaxis=dict(title="Cantidad de Eventos", showgrid=True),
+        title=title,
+        xaxis_title="",
+        yaxis=dict(title="Cantidad", showgrid=True),
         yaxis2=dict(
             title="% Acumulado",
             overlaying="y",
@@ -113,10 +114,45 @@ def _render_pareto(df: pd.DataFrame) -> None:
         ),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         margin=dict(t=60, b=80),
-        height=420,
+        height=380,
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
+
+
+# ======================================================================
+# Events by Project Chart
+# ======================================================================
+
+def _render_events_by_project(df: pd.DataFrame) -> None:
+    """Render horizontal bar chart of events per project."""
+    if "numero_proyecto" not in df.columns or df.empty:
+        st.info("No hay datos de proyectos.")
+        return
+
+    counts = df["numero_proyecto"].value_counts().reset_index()
+    counts.columns = ["Proyecto", "Cantidad"]
+    counts = counts.sort_values("Cantidad", ascending=True)  # ascending for horizontal
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        y=counts["Proyecto"],
+        x=counts["Cantidad"],
+        orientation="h",
+        marker_color="#8764B8",
+        text=counts["Cantidad"],
+        textposition="outside",
+    ))
+
+    fig.update_layout(
+        title="Eventos por Proyecto",
+        xaxis_title="Cantidad",
+        yaxis_title="",
+        margin=dict(t=60, b=40, l=120),
+        height=380,
+    )
+
+    st.plotly_chart(fig, width="stretch")
 
 
 # ======================================================================
@@ -173,7 +209,7 @@ def _render_trend(df: pd.DataFrame) -> None:
         height=400,
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 # ======================================================================
@@ -271,6 +307,9 @@ def _export_excel(df: pd.DataFrame) -> bytes:
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         # Main data sheet
         export_df = df.copy()
+        # Strip timezone info (Excel doesn't support tz-aware datetimes)
+        for col in export_df.select_dtypes(include=["datetimetz"]).columns:
+            export_df[col] = export_df[col].dt.tz_localize(None)
         # Rename columns for readability
         rename_map = {
             "id": "ID",
@@ -340,9 +379,55 @@ def render() -> None:
         st.info("📭 No hay eventos registrados. Captura un evento primero.")
         return
 
-    # --- Export button (needs data loaded) ---
+    # --- Export button (needs data loaded — will use filtered df below) ---
+
+    # --- Filters ---
+    st.markdown("---")
+    f_col1, f_col2, f_col3, f_col4 = st.columns(4)
+
+    with f_col1:
+        min_date = df["fecha_hallazgo"].min() if "fecha_hallazgo" in df.columns else None
+        fecha_inicio = st.date_input(
+            "Fecha Inicio",
+            value=min_date.date() if pd.notna(min_date) else None,
+            key="rpt_fecha_inicio",
+        )
+
+    with f_col2:
+        max_date = df["fecha_hallazgo"].max() if "fecha_hallazgo" in df.columns else None
+        fecha_fin = st.date_input(
+            "Fecha Fin",
+            value=max_date.date() if pd.notna(max_date) else None,
+            key="rpt_fecha_fin",
+        )
+
+    with f_col3:
+        proyectos = ["Todos"] + sorted(df["numero_proyecto"].dropna().unique().tolist()) if "numero_proyecto" in df.columns else ["Todos"]
+        selected_proyecto = st.selectbox("Proyecto", options=proyectos, key="rpt_proyecto")
+
+    with f_col4:
+        statuses = ["Todos", "Open", "In Progress", "Closed"]
+        selected_status = st.selectbox("Status", options=statuses, key="rpt_status")
+
+    # Apply filters
+    filtered = df.copy()
+    # Strip timezone for date comparison (SharePoint returns UTC-aware datetimes)
+    if "fecha_hallazgo" in filtered.columns and hasattr(filtered["fecha_hallazgo"].dtype, "tz"):
+        filtered["fecha_hallazgo"] = filtered["fecha_hallazgo"].dt.tz_localize(None)
+    if fecha_inicio and "fecha_hallazgo" in filtered.columns:
+        filtered = filtered[filtered["fecha_hallazgo"] >= pd.Timestamp(fecha_inicio)]
+    if fecha_fin and "fecha_hallazgo" in filtered.columns:
+        filtered = filtered[filtered["fecha_hallazgo"] <= pd.Timestamp(fecha_fin) + pd.Timedelta(days=1)]
+    if selected_proyecto != "Todos" and "numero_proyecto" in filtered.columns:
+        filtered = filtered[filtered["numero_proyecto"] == selected_proyecto]
+    if selected_status != "Todos" and "status" in filtered.columns:
+        filtered = filtered[filtered["status"] == selected_status]
+
+    filtered = filtered.reset_index(drop=True)
+
+    # --- Export (uses filtered data) ---
     with col_export:
-        excel_bytes = _export_excel(df)
+        excel_bytes = _export_excel(filtered)
         st.download_button(
             label="📥 Exportar Excel",
             data=excel_bytes,
@@ -351,30 +436,57 @@ def render() -> None:
             key="export_excel",
         )
 
-    # --- Summary Metrics ---
-    total = len(df)
-    open_count = len(df[df["status"] == "Open"]) if "status" in df.columns else 0
-    in_progress = len(df[df["status"] == "In Progress"]) if "status" in df.columns else 0
-    closed = len(df[df["status"] == "Closed"]) if "status" in df.columns else 0
+    if filtered.empty:
+        st.warning("No hay eventos que coincidan con los filtros seleccionados.")
+        return
 
-    m1, m2, m3, m4 = st.columns(4)
+    # --- Summary Metrics ---
+    total = len(filtered)
+    open_count = len(filtered[filtered["status"] == "Open"]) if "status" in filtered.columns else 0
+    in_progress = len(filtered[filtered["status"] == "In Progress"]) if "status" in filtered.columns else 0
+    closed = len(filtered[filtered["status"] == "Closed"]) if "status" in filtered.columns else 0
+
+    # Avg close time (days) — for events that have both fecha_hallazgo and fecha_real_cierre
+    avg_close_days = None
+    if "fecha_hallazgo" in filtered.columns and "fecha_real_cierre" in filtered.columns:
+        closed_events = filtered.dropna(subset=["fecha_hallazgo", "fecha_real_cierre"])
+        if not closed_events.empty:
+            cierre = pd.to_datetime(closed_events["fecha_real_cierre"], errors="coerce")
+            hallazgo = closed_events["fecha_hallazgo"]
+            deltas = (cierre - hallazgo).dt.days
+            deltas = deltas.dropna()
+            if len(deltas) > 0:
+                avg_close_days = round(deltas.mean(), 1)
+
+    # Close efficiency (%)
+    close_efficiency = round(closed / total * 100, 1) if total > 0 else 0.0
+
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
     m1.metric("Total Eventos", total)
     m2.metric("🔴 Open", open_count)
     m3.metric("🟡 In Progress", in_progress)
     m4.metric("🟢 Closed", closed)
+    m5.metric("⏱️ Prom. Cierre", f"{avg_close_days} días" if avg_close_days is not None else "N/A")
+    m6.metric("✅ Eficiencia", f"{close_efficiency}%")
 
     st.markdown("---")
 
-    # --- Charts ---
-    tab_pareto, tab_trend = st.tabs(["📊 Pareto de Causas", "📈 Tendencia Mensual"])
+    # --- Charts: 2x2 grid ---
+    # Row 1: Pareto Impacto | Eventos por Proyecto
+    chart_r1c1, chart_r1c2 = st.columns(2)
+    with chart_r1c1:
+        _render_pareto(filtered, column="tipo_impacto", title="Pareto — Tipo de Impacto", bar_color="#D13438")
+    with chart_r1c2:
+        _render_events_by_project(filtered)
 
-    with tab_pareto:
-        _render_pareto(df)
-
-    with tab_trend:
-        _render_trend(df)
+    # Row 2: Pareto Causas | Tendencia Mensual
+    chart_r2c1, chart_r2c2 = st.columns(2)
+    with chart_r2c1:
+        _render_pareto(filtered, column="causa", title="Pareto — Causas", bar_color="#0078D4")
+    with chart_r2c2:
+        _render_trend(filtered)
 
     st.markdown("---")
 
     # --- Insights ---
-    _render_insights(df)
+    _render_insights(filtered)

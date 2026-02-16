@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     # --- Application ---
     app_name: str = Field(default="Operation Events", description="Application display name")
     app_description: str = Field(default="Captura y análisis de eventos operativos en producción", description="Short app description for login page")
-    app_version: str = Field(default="0.1.0", description="Application version")
+    app_version: str = Field(default="1.0.0", description="Application version")
     app_env: str = Field(default="development", description="Environment: development | staging | production")
 
     # --- Feature Flags ---

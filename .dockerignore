@@ -37,3 +37,7 @@ nginx/certs/
 
 # Docs
 README.md
+specs/
+
+# Runtime-generated catalogs
+config/catalogs.json

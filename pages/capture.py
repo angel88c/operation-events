@@ -185,7 +185,7 @@ def render() -> None:
         submitted = st.button(
             "✈️ Enviar y Guardar",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             key="capture_submit",
         )
 
