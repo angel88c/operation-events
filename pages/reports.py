@@ -3,7 +3,13 @@
 Pantalla de Reportes y Análisis (RF-003)
 ============================================================================
 Dashboard con gráficos Pareto, tendencias mensuales e insights.
-Se implementará en el Milestone 4.
+
+Features:
+    - Gráfico Pareto de Causas (barras + línea % acumulado)
+    - Gráfico de Tendencia Mensual de eventos
+    - Insights: Top 3 causas, proyectos con más eventos, recomendaciones
+    - Exportar Reporte a Excel
+    - Actualizar Datos desde SharePoint
 
 Referencia: specs/operation-events.md — RF-003, Milestone 4
 ============================================================================
@@ -11,33 +17,364 @@ Referencia: specs/operation-events.md — RF-003, Milestone 4
 
 from __future__ import annotations
 
+from io import BytesIO
+from typing import Any
+
+import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from components.navigation import render_page_header
 from config.theme import theme
+from utils.sharepoint import get_all_events
 
+
+# ======================================================================
+# Data Loading
+# ======================================================================
+
+def _load_report_data() -> pd.DataFrame:
+    """Fetch events from SharePoint and prepare for reporting."""
+    events = get_all_events()
+    if not events:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(events)
+
+    # Parse fecha_hallazgo to datetime
+    if "fecha_hallazgo" in df.columns:
+        df["fecha_hallazgo"] = pd.to_datetime(df["fecha_hallazgo"], errors="coerce")
+        df["mes"] = df["fecha_hallazgo"].dt.to_period("M").astype(str)
+
+    # Fill NaN for grouping columns
+    for col in ("causa", "tipo_impacto", "numero_proyecto", "responsable", "status"):
+        if col in df.columns:
+            df[col] = df[col].fillna("Sin dato")
+
+    return df
+
+
+# ======================================================================
+# Pareto Chart
+# ======================================================================
+
+def _render_pareto(df: pd.DataFrame) -> None:
+    """Render Pareto chart of causes."""
+    if "causa" not in df.columns or df.empty:
+        st.info("No hay datos para el gráfico Pareto.")
+        return
+
+    # Count by causa, sorted descending
+    counts = df["causa"].value_counts().reset_index()
+    counts.columns = ["Causa", "Cantidad"]
+    counts = counts.sort_values("Cantidad", ascending=False).reset_index(drop=True)
+
+    # Cumulative percentage
+    total = counts["Cantidad"].sum()
+    counts["Acumulado"] = counts["Cantidad"].cumsum()
+    counts["% Acumulado"] = (counts["Acumulado"] / total * 100).round(1)
+
+    fig = go.Figure()
+
+    # Bars
+    fig.add_trace(go.Bar(
+        x=counts["Causa"],
+        y=counts["Cantidad"],
+        name="Cantidad",
+        marker_color="#0078D4",
+        text=counts["Cantidad"],
+        textposition="outside",
+    ))
+
+    # Cumulative line
+    fig.add_trace(go.Scatter(
+        x=counts["Causa"],
+        y=counts["% Acumulado"],
+        name="% Acumulado",
+        yaxis="y2",
+        mode="lines+markers+text",
+        line=dict(color="#D13438", width=2),
+        marker=dict(size=6),
+        text=counts["% Acumulado"].apply(lambda v: f"{v}%"),
+        textposition="top center",
+        textfont=dict(size=10),
+    ))
+
+    fig.update_layout(
+        title="Pareto de Causas",
+        xaxis_title="Causa",
+        yaxis=dict(title="Cantidad de Eventos", showgrid=True),
+        yaxis2=dict(
+            title="% Acumulado",
+            overlaying="y",
+            side="right",
+            range=[0, 110],
+            showgrid=False,
+        ),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(t=60, b=80),
+        height=420,
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# ======================================================================
+# Monthly Trend Chart
+# ======================================================================
+
+def _render_trend(df: pd.DataFrame) -> None:
+    """Render monthly trend chart."""
+    if "mes" not in df.columns or df.empty:
+        st.info("No hay datos para el gráfico de tendencia.")
+        return
+
+    # Count by month and impact type
+    trend = df.groupby(["mes", "tipo_impacto"]).size().reset_index(name="Cantidad")
+
+    # Color map for impact types
+    color_map = {
+        "Paro de Ensamble": "#D13438",
+        "Retrabajo": "#FF8C00",
+        "Mejora del Proceso": "#0078D4",
+        "Falta de Material": "#8764B8",
+    }
+
+    fig = go.Figure()
+
+    for impacto in trend["tipo_impacto"].unique():
+        subset = trend[trend["tipo_impacto"] == impacto].sort_values("mes")
+        fig.add_trace(go.Scatter(
+            x=subset["mes"],
+            y=subset["Cantidad"],
+            name=impacto,
+            mode="lines+markers",
+            line=dict(color=color_map.get(impacto, "#666"), width=2),
+            marker=dict(size=7),
+        ))
+
+    # Also add total line
+    total_trend = df.groupby("mes").size().reset_index(name="Cantidad").sort_values("mes")
+    fig.add_trace(go.Scatter(
+        x=total_trend["mes"],
+        y=total_trend["Cantidad"],
+        name="Total",
+        mode="lines+markers",
+        line=dict(color="#333", width=3, dash="dot"),
+        marker=dict(size=8),
+    ))
+
+    fig.update_layout(
+        title="Tendencia Mensual de Eventos",
+        xaxis_title="Mes",
+        yaxis_title="Cantidad de Eventos",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(t=60, b=60),
+        height=400,
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# ======================================================================
+# Insights
+# ======================================================================
+
+def _render_insights(df: pd.DataFrame) -> None:
+    """Render insights section."""
+    if df.empty:
+        return
+
+    st.subheader("💡 Insights")
+
+    col1, col2, col3 = st.columns(3)
+
+    # Top 3 causas
+    with col1:
+        st.markdown(f"""
+        <div style="background:{theme.colors.surface}; border:1px solid {theme.colors.border};
+                    border-radius:{theme.border_radius}; padding:1rem; height:100%;">
+            <h4 style="margin:0 0 0.5rem;">🔥 Top 3 Causas</h4>
+        """, unsafe_allow_html=True)
+
+        if "causa" in df.columns:
+            top_causas = df["causa"].value_counts().head(3)
+            for i, (causa, count) in enumerate(top_causas.items(), 1):
+                pct = round(count / len(df) * 100, 1)
+                st.markdown(f"**{i}. {causa}** — {count} eventos ({pct}%)")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # Proyectos con más eventos
+    with col2:
+        st.markdown(f"""
+        <div style="background:{theme.colors.surface}; border:1px solid {theme.colors.border};
+                    border-radius:{theme.border_radius}; padding:1rem; height:100%;">
+            <h4 style="margin:0 0 0.5rem;">📁 Top 3 Proyectos</h4>
+        """, unsafe_allow_html=True)
+
+        if "numero_proyecto" in df.columns:
+            top_proj = df["numero_proyecto"].value_counts().head(3)
+            for i, (proj, count) in enumerate(top_proj.items(), 1):
+                st.markdown(f"**{i}. {proj}** — {count} eventos")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # Status summary
+    with col3:
+        st.markdown(f"""
+        <div style="background:{theme.colors.surface}; border:1px solid {theme.colors.border};
+                    border-radius:{theme.border_radius}; padding:1rem; height:100%;">
+            <h4 style="margin:0 0 0.5rem;">📊 Resumen de Status</h4>
+        """, unsafe_allow_html=True)
+
+        if "status" in df.columns:
+            status_counts = df["status"].value_counts()
+            total = len(df)
+            for status, count in status_counts.items():
+                pct = round(count / total * 100, 1)
+                icon = {"Open": "🔴", "In Progress": "🟡", "Closed": "🟢"}.get(status, "⚪")
+                st.markdown(f"{icon} **{status}** — {count} ({pct}%)")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # Recommendations
+    st.markdown("---")
+    st.markdown(f"""
+    <div style="background:#FFF8E1; border:1px solid #FFE082; border-radius:{theme.border_radius}; padding:1rem;">
+        <h4 style="margin:0 0 0.5rem;">📋 Recomendaciones</h4>
+    """, unsafe_allow_html=True)
+
+    if "causa" in df.columns and "status" in df.columns:
+        top_causa = df["causa"].value_counts().idxmax() if not df["causa"].value_counts().empty else None
+        open_count = len(df[df["status"] == "Open"])
+        total = len(df)
+
+        if top_causa:
+            causa_count = df["causa"].value_counts().iloc[0]
+            st.markdown(f"- **Causa principal:** *{top_causa}* representa **{round(causa_count/total*100, 1)}%** de los eventos. Considerar plan de acción específico.")
+        if open_count > 0:
+            st.markdown(f"- **Eventos abiertos:** Hay **{open_count}** eventos sin cerrar ({round(open_count/total*100, 1)}%). Priorizar seguimiento.")
+        if "tipo_impacto" in df.columns:
+            paros = len(df[df["tipo_impacto"] == "Paro de Ensamble"])
+            if paros > 0:
+                st.markdown(f"- **Paros de Ensamble:** Se han registrado **{paros}** paros. Impacto directo en producción.")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ======================================================================
+# Excel Export
+# ======================================================================
+
+def _export_excel(df: pd.DataFrame) -> bytes:
+    """Export DataFrame to Excel bytes."""
+    output = BytesIO()
+
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        # Main data sheet
+        export_df = df.copy()
+        # Rename columns for readability
+        rename_map = {
+            "id": "ID",
+            "persona_detecta": "Detectó",
+            "tipo_impacto": "Tipo de Impacto",
+            "causa": "Causa",
+            "numero_proyecto": "No. Proyecto",
+            "numero_parte": "No. Parte/Plano",
+            "responsable": "Responsable",
+            "comentarios": "Comentarios",
+            "fecha_hallazgo": "Fecha Hallazgo",
+            "accion_correctiva": "Acción Correctiva",
+            "accion_preventiva": "Acción Preventiva",
+            "fecha_plan": "Fecha Plan",
+            "fecha_real_cierre": "Fecha Real Cierre",
+            "status": "Status",
+        }
+        export_df = export_df.rename(columns=rename_map)
+        export_df.to_excel(writer, sheet_name="Eventos", index=False)
+
+        # Summary sheet
+        if "Causa" in export_df.columns:
+            summary = export_df["Causa"].value_counts().reset_index()
+            summary.columns = ["Causa", "Cantidad"]
+            summary.to_excel(writer, sheet_name="Resumen Causas", index=False)
+
+        if "Tipo de Impacto" in export_df.columns:
+            impact_summary = export_df["Tipo de Impacto"].value_counts().reset_index()
+            impact_summary.columns = ["Tipo de Impacto", "Cantidad"]
+            impact_summary.to_excel(writer, sheet_name="Resumen Impacto", index=False)
+
+        # Auto-fit columns
+        for sheet_name in writer.sheets:
+            worksheet = writer.sheets[sheet_name]
+            worksheet.set_column(0, 20, 18)
+
+    return output.getvalue()
+
+
+# ======================================================================
+# Render Page
+# ======================================================================
 
 def render() -> None:
-    """Render the reports and analysis page (placeholder)."""
+    """Render the reports and analysis page."""
     render_page_header(
         title="Reportes y Análisis",
         description="Análisis gráfico de eventos operativos",
         icon="📊",
     )
 
-    st.markdown(
-        f"""
-        <div style="background:{theme.colors.surface}; border:1px solid {theme.colors.border};
-                    border-radius:{theme.border_radius}; padding:3rem; text-align:center;
-                    margin-top:2rem;">
-            <h2 style="color:{theme.colors.text_secondary}; margin-bottom:0.5rem;">
-                🚧 Próximamente — Milestone 4
-            </h2>
-            <p style="color:{theme.colors.text_muted}; font-size:0.95rem;">
-                Esta pantalla mostrará gráficos Pareto de causas, tendencia mensual de eventos,
-                insights importantes y opciones de exportación de reportes.
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    # --- Toolbar ---
+    col_refresh, col_export, col_spacer = st.columns([1, 1, 4])
+
+    with col_refresh:
+        refresh = st.button("🔄 Actualizar Datos", key="refresh_reports", type="secondary")
+
+    # --- Load Data ---
+    if refresh or "report_df" not in st.session_state:
+        with st.spinner("Cargando datos desde SharePoint..."):
+            df = _load_report_data()
+            st.session_state["report_df"] = df
+
+    df = st.session_state.get("report_df", pd.DataFrame())
+
+    if df.empty:
+        st.info("📭 No hay eventos registrados. Captura un evento primero.")
+        return
+
+    # --- Export button (needs data loaded) ---
+    with col_export:
+        excel_bytes = _export_excel(df)
+        st.download_button(
+            label="📥 Exportar Excel",
+            data=excel_bytes,
+            file_name="reporte_eventos.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="export_excel",
+        )
+
+    # --- Summary Metrics ---
+    total = len(df)
+    open_count = len(df[df["status"] == "Open"]) if "status" in df.columns else 0
+    in_progress = len(df[df["status"] == "In Progress"]) if "status" in df.columns else 0
+    closed = len(df[df["status"] == "Closed"]) if "status" in df.columns else 0
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Total Eventos", total)
+    m2.metric("🔴 Open", open_count)
+    m3.metric("🟡 In Progress", in_progress)
+    m4.metric("🟢 Closed", closed)
+
+    st.markdown("---")
+
+    # --- Charts ---
+    tab_pareto, tab_trend = st.tabs(["📊 Pareto de Causas", "📈 Tendencia Mensual"])
+
+    with tab_pareto:
+        _render_pareto(df)
+
+    with tab_trend:
+        _render_trend(df)
+
+    st.markdown("---")
+
+    # --- Insights ---
+    _render_insights(df)

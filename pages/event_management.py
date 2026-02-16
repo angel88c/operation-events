@@ -88,14 +88,14 @@ def _build_grid_options(df: pd.DataFrame) -> dict:
     """Build AgGrid options with editable columns."""
     gb = GridOptionsBuilder.from_dataframe(df)
 
-    # Default column settings
+    # Default column settings: no wrap, single line
     gb.configure_default_column(
         resizable=True,
         filterable=True,
         sortable=True,
         editable=False,
-        wrapText=True,
-        autoHeight=True,
+        wrapText=False,
+        autoHeight=False,
     )
 
     # Configure each column
@@ -118,12 +118,17 @@ def _build_grid_options(df: pd.DataFrame) -> dict:
         if key in ("fecha_hallazgo", "fecha_plan", "fecha_real_cierre"):
             col_opts["type"] = ["dateColumnFilter"]
 
+        # Comentarios: multiline wrap
+        if key == "comentarios":
+            col_opts["wrapText"] = True
+            col_opts["autoHeight"] = True
+
         # Highlight editable columns
         if editable:
-            col_opts["cellStyle"] = {
-                "backgroundColor": "#f0f7ff",
-                "borderLeft": "2px solid #0078D4",
-            }
+            style = col_opts.get("cellStyle", {})
+            style["backgroundColor"] = "#f0f7ff"
+            style["borderLeft"] = "2px solid #0078D4"
+            col_opts["cellStyle"] = style
 
         gb.configure_column(key, **col_opts)
 
@@ -133,7 +138,8 @@ def _build_grid_options(df: pd.DataFrame) -> dict:
         use_checkbox=False,
     )
 
-    # Grid options
+    # Pagination & grid options
+    gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
     gb.configure_grid_options(
         domLayout="normal",
         enableRangeSelection=False,
@@ -157,35 +163,41 @@ def _save_changes(original_df: pd.DataFrame, edited_df: pd.DataFrame) -> int:
     editable_keys = [key for key, _, editable, _ in COLUMN_CONFIG if editable]
     updated_count = 0
 
-    for idx in edited_df.index:
-        if idx >= len(original_df):
+    # Build lookup of original rows by item ID
+    orig_by_id: dict[str, dict[str, Any]] = {}
+    for _, row in original_df.iterrows():
+        rid = str(row.get("id", ""))
+        if rid:
+            orig_by_id[rid] = row.to_dict()
+
+    for _, edited_row in edited_df.iterrows():
+        row_id = str(edited_row.get("id", ""))
+        if not row_id or row_id not in orig_by_id:
             continue
 
-        row_id = edited_df.at[idx, "id"]
-        if not row_id:
-            continue
-
+        orig_row = orig_by_id[row_id]
         changes: dict[str, Any] = {}
+
         for key in editable_keys:
             if key not in edited_df.columns:
                 continue
-            new_val = edited_df.at[idx, key]
-            old_val = original_df.at[idx, key] if idx < len(original_df) else None
+            new_val = edited_row.get(key)
+            old_val = orig_row.get(key)
 
             # Normalize NaN/None
-            if pd.isna(new_val):
+            if pd.isna(new_val) if not isinstance(new_val, str) else False:
                 new_val = ""
-            if pd.isna(old_val):
+            if pd.isna(old_val) if not isinstance(old_val, str) else False:
                 old_val = ""
 
-            new_str = str(new_val).strip()
-            old_str = str(old_val).strip()
+            new_str = str(new_val).strip() if new_val is not None else ""
+            old_str = str(old_val).strip() if old_val is not None else ""
 
             if new_str != old_str:
                 changes[key] = new_str if new_str else None
 
         if changes:
-            success = update_event(str(row_id), changes)
+            success = update_event(row_id, changes)
             if success:
                 updated_count += 1
 
