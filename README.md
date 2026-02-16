@@ -1,248 +1,237 @@
-# 🚀 Streamlit Professional Template
+# 🏭 Operation Events
 
-A **production-ready** Streamlit application template with Microsoft 365 authentication, advanced data tables, professional charts, validated forms, and a clean modular architecture — designed to be extended rapidly with AI assistants (Windsurf + Claude).
+Aplicación para **captura y análisis de eventos operativos** registrados en producción. Centraliza la captura de hallazgos, envía notificaciones automáticas al responsable y ofrece dashboards con gráficos Pareto, tendencias e insights para toma de decisiones.
 
----
-
-## ✨ Features
-
-| Feature | Technology | Description |
-|---|---|---|
-| **Authentication** | MSAL (Microsoft 365 / Azure AD) | Full OAuth2 authorization code flow with user profile |
-| **Data Tables** | streamlit-aggrid | Filtering, sorting, pagination, column visibility, CSV export |
-| **Charts** | Plotly | Bar, line, area, pie, KPI indicators with consistent theming |
-| **Form Validation** | Pydantic-style declarative | Text, email, number, date, select, multiselect, checkbox, regex |
-| **Navigation** | streamlit-option-menu | Sidebar with icons, page routing, user menu |
-| **Styling** | Custom CSS + Fluent Design | Metric cards, info cards, badges, consistent color palette |
-| **Configuration** | pydantic-settings + .env | Typed settings with environment variable support |
+**Usuarios:** Gerentes, Directivos, Ingenieros y Técnicos de ensamble.
 
 ---
 
-## 📁 Project Structure
+## ✨ Funcionalidades
+
+| Pantalla | Descripción |
+|---|---|
+| **📝 Captura** | Formulario de registro de eventos con selección dinámica de Tipo de Impacto → Causa, selector de usuarios M365, y guardado en Microsoft Lists |
+| **📋 Gestión de Eventos** | Tabla AgGrid editable con filtros por responsable, status y tipo de impacto. Guardado de cambios directo a SharePoint |
+| **📊 Reportes y Análisis** | Pareto de causas e impactos, tendencia mensual, eventos por proyecto, insights automáticos, métricas de eficiencia y exportación a Excel |
+| **⚙️ Configuración** | Prueba de conexión a SharePoint, CRUD de catálogos (Tipos de Impacto y Causas), perfil de usuario |
+
+### Características adicionales
+
+- **Notificaciones por email** — Envío automático al responsable vía MS Graph API con template HTML
+- **Autenticación Microsoft 365** — SSO corporativo con MSAL (OAuth2)
+- **Catálogos editables** — Tipos de impacto y causas configurables con persistencia en JSON
+- **Despliegue Docker** — Dockerfile + docker-compose con Nginx y SSL
+
+---
+
+## 🛠️ Tech Stack
+
+| Capa | Tecnología |
+|---|---|
+| **Frontend/UI** | Streamlit 1.38+ |
+| **Backend** | Python 3.11+ |
+| **Base de datos** | Microsoft Lists (SharePoint) vía MS Graph API |
+| **Autenticación** | MSAL (Microsoft 365 / Azure AD) |
+| **Tablas** | streamlit-aggrid |
+| **Gráficos** | Plotly |
+| **Email** | MS Graph API (Mail.Send) |
+| **Configuración** | pydantic-settings + .env |
+| **Despliegue** | Docker + Nginx |
+
+---
+
+## 📁 Estructura del Proyecto
 
 ```
-streamlit-template-ws/
-├── app.py                      # 🏠 Main entry point
-├── requirements.txt            # 📦 Python dependencies
-├── .env.example                # 🔑 Environment variables template
-├── .gitignore                  # Git ignore rules
+streamlit-operation-events/
+├── app.py                      # 🏠 Punto de entrada principal
+├── requirements.txt            # 📦 Dependencias Python
+├── Dockerfile                  # � Imagen Docker
+├── docker-compose.yml          # 🐳 Orquestación con Nginx
+├── .env.example                # 🔑 Template de variables de entorno
 ├── .streamlit/
-│   └── config.toml             # Streamlit server & theme config
+│   └── config.toml             # Configuración de Streamlit (puerto 3001, tema)
 │
-├── auth/                       # 🔐 Authentication module
-│   ├── __init__.py
-│   └── microsoft.py            # MSAL OAuth2 flow, login UI, session management
+├── auth/                       # 🔐 Autenticación
+│   ├── microsoft.py            # MSAL OAuth2 flow, login UI, sesión
+│   └── graph_users.py          # Consulta de usuarios M365 vía Graph API
 │
-├── config/                     # ⚙️ Configuration module
-│   ├── __init__.py
-│   ├── settings.py             # Pydantic Settings (loads from .env)
-│   └── theme.py                # Color palette, chart colors, CSS injection
+├── config/                     # ⚙️ Configuración
+│   ├── settings.py             # Pydantic Settings (carga desde .env)
+│   ├── catalogs.py             # Catálogos de Impacto/Causa con CRUD y persistencia JSON
+│   └── theme.py                # Paleta de colores, CSS personalizado
 │
-├── components/                 # 🧩 Reusable UI components
-│   ├── __init__.py
-│   ├── tables.py               # AgGrid wrapper with AgGridConfig
-│   ├── charts.py               # Plotly chart library (bar, line, pie, area, KPI)
-│   ├── forms.py                # Validated forms with FormField definitions
-│   ├── cards.py                # Metric cards, info cards
-│   └── navigation.py           # Sidebar, page header, user menu
+├── components/                 # 🧩 Componentes reutilizables
+│   ├── tables.py               # Wrapper AgGrid
+│   ├── charts.py               # Gráficos Plotly con tema consistente
+│   ├── forms.py                # Formularios con validación
+│   ├── cards.py                # Tarjetas de métricas
+│   └── navigation.py           # Sidebar, header, menú de usuario
 │
-├── pages/                      # 📄 Application pages
-│   ├── __init__.py
-│   ├── dashboard.py            # KPI metrics + charts overview
-│   ├── data_explorer.py        # AgGrid table with filters & export
-│   ├── forms_page.py           # Form validation demos (3 examples)
-│   ├── charts_page.py          # Interactive chart gallery
-│   └── settings_page.py        # Profile, environment, about
+├── pages/                      # 📄 Pantallas de la aplicación
+│   ├── capture.py              # Captura de eventos (RF-001)
+│   ├── event_management.py     # Gestión de eventos con AgGrid (RF-002)
+│   ├── reports.py              # Reportes y análisis (RF-003)
+│   └── settings_page.py        # Configuración (RF-004)
 │
-└── utils/                      # 🛠️ Utilities
-    ├── __init__.py
-    ├── helpers.py              # Formatters (currency, numbers, percentages)
-    └── sample_data.py          # Sample data generators for demos
+├── utils/                      # 🛠️ Utilidades
+│   ├── sharepoint.py           # CRUD Microsoft Lists vía Graph API
+│   ├── email.py                # Envío de notificaciones por email
+│   └── helpers.py              # Formateadores (moneda, números, porcentajes)
+│
+├── specs/
+│   └── operation-events.md     # Especificación completa del proyecto
+│
+└── nginx/                      # 🌐 Configuración Nginx (reverse proxy + SSL)
+    ├── nginx.conf
+    └── generate-cert.sh
 ```
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Inicio Rápido
 
-### 1. Clone & Install
+### 1. Clonar e instalar
 
 ```bash
-cd streamlit-template-ws
+git clone https://github.com/angel88c/operation-events.git
+cd operation-events
 python -m venv .venv
 .venv\Scripts\activate          # Windows
 # source .venv/bin/activate     # macOS/Linux
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment
+### 2. Configurar variables de entorno
 
 ```bash
 copy .env.example .env          # Windows
 # cp .env.example .env          # macOS/Linux
 ```
 
-Edit `.env` with your settings. **For development without Microsoft auth:**
+Edita `.env` con tus credenciales. **Para desarrollo sin autenticación Microsoft:**
 
 ```env
 ENABLE_AUTH=false
 ```
 
-### 3. Run
+### 3. Ejecutar
 
 ```bash
 streamlit run app.py
 ```
 
-The app will open at [http://localhost:8501](http://localhost:8501).
+La app se abrirá en [http://localhost:3001](http://localhost:3001).
 
 ---
 
-## 🔐 Microsoft 365 Authentication Setup
+## 🔐 Configuración de Microsoft 365
 
-### Azure Portal Configuration
+### Azure Portal
 
-1. Go to [Azure Portal](https://portal.azure.com) → **Azure Active Directory** → **App registrations**
-2. Click **New registration**
-   - **Name:** Your app name
-   - **Supported account types:** Accounts in this organizational directory only (Single tenant)
-   - **Redirect URI:** Web → `http://localhost:8501`
-3. Copy the **Application (client) ID** and **Directory (tenant) ID**
-4. Go to **Certificates & secrets** → **New client secret** → Copy the **Value**
-5. Go to **API permissions** → Add:
-   - `User.Read`
-   - `openid`
-   - `profile`
-   - `email`
-6. Update your `.env`:
+1. Ir a [Azure Portal](https://portal.azure.com) → **Azure Active Directory** → **App registrations**
+2. **New registration**
+   - **Name:** Operation Events
+   - **Supported account types:** Single tenant
+   - **Redirect URI:** Web → `http://localhost:3001`
+3. Copiar **Application (client) ID** y **Directory (tenant) ID**
+4. **Certificates & secrets** → New client secret → Copiar el **Value**
+5. **API permissions** → Agregar:
+   - `User.Read` — Perfil del usuario
+   - `User.Read.All` (Application) — Selector de usuarios
+   - `Sites.ReadWrite.All` (Application) — Lectura/escritura en Microsoft Lists
+   - `Mail.Send` (Application) — Envío de notificaciones por email
+6. **Grant admin consent** para los permisos de aplicación
+
+### Variables de entorno requeridas
 
 ```env
-AZURE_CLIENT_ID=your-client-id
-AZURE_CLIENT_SECRET=your-secret-value
-AZURE_TENANT_ID=your-tenant-id
-AZURE_REDIRECT_URI=http://localhost:8501
-ENABLE_AUTH=true
+AZURE_CLIENT_ID=tu-client-id
+AZURE_CLIENT_SECRET=tu-client-secret
+AZURE_TENANT_ID=tu-tenant-id
+AZURE_REDIRECT_URI=http://localhost:3001
+
+SHAREPOINT_SITE_ID=tu-site-id
+SHAREPOINT_LIST_ID=tu-list-id
+SHAREPOINT_DOMAIN=tuempresa.sharepoint.com
+USER_DOMAIN=tuempresa.com
+
+EMAIL_SENDER=notificaciones@tuempresa.com
+APP_URL=http://localhost:3001
 ```
 
 ---
 
-## 🧩 How to Extend
+## 🐳 Despliegue con Docker
 
-### Adding a New Page
+### Build y ejecución directa
 
-1. Create `pages/my_page.py`:
-
-```python
-from components.navigation import render_page_header
-
-def render() -> None:
-    render_page_header("My Page", "Description here", icon="🆕")
-    # Your page content...
+```bash
+docker build -t operation-events .
+docker run -p 3001:3001 --env-file .env operation-events
 ```
 
-2. Register in `components/navigation.py` → `PAGE_REGISTRY`:
+### Con Docker Compose (incluye Nginx + SSL)
 
-```python
-{"name": "My Page", "icon": "plus-circle"},
+```bash
+# Generar certificado SSL autofirmado
+bash nginx/generate-cert.sh
+
+# Levantar servicios
+docker-compose up --build -d
+
+# Ver logs
+docker-compose logs -f
 ```
 
-3. Add to the router in `app.py` → `PAGE_MAP`:
-
-```python
-"My Page": my_page.render,
-```
-
-### Using AgGrid Tables
-
-```python
-from components import render_aggrid_table, AgGridConfig
-
-config = AgGridConfig(
-    page_size=25,
-    selection_mode="multiple",
-    enable_export=True,
-    column_config={
-        "price": {"headerName": "Price ($)", "type": ["numericColumn"]},
-    },
-)
-response = render_aggrid_table(df, config=config)
-```
-
-### Using Validated Forms
-
-```python
-from components.forms import validated_form, FormField
-
-fields = [
-    FormField(key="name", label="Name", type="text", required=True, min_length=2),
-    FormField(key="email", label="Email", type="email", required=True),
-    FormField(key="age", label="Age", type="number", min_value=18, max_value=120),
-]
-
-result = validated_form(fields, submit_label="Submit")
-if result:
-    st.success(f"Submitted: {result}")
-```
-
-### Using Charts
-
-```python
-from components import render_bar_chart, render_line_chart, render_pie_chart
-
-render_bar_chart(df, x="category", y="revenue", title="Revenue by Category")
-render_line_chart(df, x="date", y=["sales", "returns"], title="Trends")
-render_pie_chart(df, names="region", values="total", title="Distribution")
-```
+Acceso:
+- **Local:** https://localhost
+- **Red:** https://192.168.100.90
 
 ---
 
-## 🎨 Theming
+## 📊 Catálogos de Impacto y Causas
 
-All visual tokens are centralized in `config/theme.py`:
+Los catálogos vienen preconfigurados con 4 tipos de impacto y sus causas asociadas:
 
-- **`theme.colors`** — Primary, secondary, success, warning, danger, etc.
-- **`theme.chart_colors`** — Sequential, categorical, and diverging palettes
-- **`theme.spacing`** — Consistent spacing values (xs through xxl)
-
-Custom CSS is injected via `get_custom_css()` in `app.py` for metric cards, sidebar, buttons, and more.
-
----
-
-## 🤖 Designed for AI-Assisted Development
-
-This template is structured for optimal collaboration with AI coding assistants:
-
-- **Clear module boundaries** — Each file has a single responsibility
-- **Comprehensive docstrings** — Every module, class, and function is documented
-- **Type hints everywhere** — Full type annotations for better AI understanding
-- **Declarative patterns** — Forms and tables use config objects, not imperative code
-- **Consistent naming** — Predictable file and function naming conventions
-- **Sample data included** — AI can immediately test and iterate
-
-### Recommended Workflow with Windsurf + Claude
-
-1. Describe what you want to build
-2. Reference the relevant component (e.g., "use the AgGrid table component")
-3. AI reads the component's docstring and creates your page
-4. Iterate with validation — forms auto-validate, charts auto-theme
-
----
-
-## 📋 Dependencies
-
-| Package | Purpose |
+| Tipo de Impacto | Causas |
 |---|---|
-| `streamlit` | Web framework |
-| `msal` | Microsoft authentication |
-| `pandas` / `numpy` | Data handling |
-| `streamlit-aggrid` | Advanced data tables |
-| `plotly` | Interactive charts |
-| `pydantic` / `pydantic-settings` | Settings & validation |
-| `streamlit-option-menu` | Sidebar navigation |
-| `requests` / `httpx` | HTTP client |
-| `openpyxl` / `xlsxwriter` | Excel export |
+| **Paro de Ensamble** | 12 causas (falla de equipo, falta de material, etc.) |
+| **Retrabajo** | 9 causas (defecto de material, error de ensamble, etc.) |
+| **Mejora del Proceso** | 16 causas (tiempo ciclo alto, cuello de botella, etc.) |
+| **Falta de Material** | 13 causas (error en MRP, retraso de proveedor, etc.) |
+
+Los catálogos se pueden editar desde **Configuración → Catálogos** y se persisten en `config/catalogs.json`.
 
 ---
 
-## 📄 License
+## 📋 Dependencias principales
 
-MIT — Use freely for your projects.
+| Paquete | Propósito |
+|---|---|
+| `streamlit` | Framework web |
+| `msal` | Autenticación Microsoft 365 |
+| `pandas` / `numpy` | Manejo de datos |
+| `streamlit-aggrid` | Tablas editables avanzadas |
+| `plotly` | Gráficos interactivos |
+| `pydantic-settings` | Configuración tipada |
+| `requests` | Cliente HTTP para Graph API |
+| `xlsxwriter` | Exportación a Excel |
+
+---
+
+## 📌 Versiones
+
+| Tag | Milestone | Descripción |
+|---|---|---|
+| `v0.1-captura` | M1 | Estructura base + Pantalla de Captura |
+| `v0.2-notificaciones` | M2 | Notificaciones por email vía MS Graph API |
+| `v0.3-gestion` | M3 | Gestión de Eventos con AgGrid editable |
+| `v0.4-reportes` | M4 | Reportes con Pareto, tendencias, insights y Excel |
+| `v1.0-release` | M5 | Configuración completa + CRUD catálogos + Docker |
+
+---
+
+## 📄 Licencia
+
+MIT — Uso libre para proyectos internos.
