@@ -32,6 +32,7 @@ from components.navigation import render_page_header
 from config.catalogs import get_impact_types, get_causes_for_impact
 from config.settings import get_settings
 from config.theme import theme
+from utils.email import send_event_notification
 from utils.sharepoint import create_event
 
 
@@ -281,11 +282,23 @@ def _save_event(
         item_id = create_event(event_data)
 
     if item_id:
-        st.success(
-            f"✅ Evento registrado exitosamente (ID: {item_id}). "
-            f"Se notificará a **{responsable_name}** ({responsable_email})."
-        )
-        # Store in session for potential email notification (Milestone 2)
+        st.success(f"✅ Evento registrado exitosamente (ID: {item_id}).")
+
+        # Send email notification to responsable
+        if responsable_email:
+            with st.spinner(f"Enviando notificación a {responsable_email}..."):
+                email_ok, email_msg = send_event_notification(
+                    event_data=event_data,
+                    recipient_email=responsable_email,
+                    recipient_name=responsable_name,
+                )
+            if email_ok:
+                st.success(f"📧 {email_msg}")
+            else:
+                st.warning(f"⚠️ Evento guardado pero no se pudo enviar email: {email_msg}")
+        else:
+            st.warning("⚠️ Evento guardado pero no se encontró email del responsable.")
+
         st.session_state["last_saved_event"] = {
             **event_data,
             "id": item_id,

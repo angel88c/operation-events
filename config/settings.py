@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     sharepoint_domain: str = Field(default="", description="SharePoint domain (e.g. contoso.sharepoint.com)")
     user_domain: str = Field(default="ibtest.com", description="Email domain filter for user selectors (e.g. ibtest.com)")
 
+    # --- Email Notifications ---
+    email_sender: str = Field(default="", description="Email address to send notifications from (must have Send.Mail permission)")
+    app_url: str = Field(default="http://localhost:3001", description="App URL for email links")
+
     # --- Application ---
     app_name: str = Field(default="Operation Events", description="Application display name")
     app_description: str = Field(default="Captura y análisis de eventos operativos en producción", description="Short app description for login page")
