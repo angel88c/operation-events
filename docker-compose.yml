@@ -1,0 +1,46 @@
+# ============================================================================
+# Streamlit Professional Template — Docker Compose
+# ============================================================================
+# Usage:
+#   1. Generate SSL cert:  bash nginx/generate-cert.sh
+#      (or on Windows with Git Bash / WSL)
+#   2. Build & run:        docker-compose up --build
+#   3. Detached mode:      docker-compose up -d
+#   4. Stop & remove:      docker-compose down
+#   5. Follow logs:        docker-compose logs -f
+#
+# Access:
+#   - Local:   https://localhost
+#   - Network: https://192.168.100.90
+#
+# Azure AD redirect URI:  https://192.168.100.90
+# ============================================================================
+
+services:
+  streamlit-app:
+    build: .
+    container_name: streamlit-app
+    expose:
+      - "3001"
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/_stcore/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  nginx:
+    image: nginx:alpine
+    container_name: streamlit-nginx
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - streamlit-app
+    restart: unless-stopped

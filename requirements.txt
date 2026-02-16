@@ -1,0 +1,37 @@
+# ============================================================================
+# Streamlit Professional Template - Dependencies
+# ============================================================================
+# Core Framework
+streamlit>=1.38.0
+
+# Authentication - Microsoft 365 (MSAL)
+msal>=1.28.0
+
+# Data Handling
+pandas>=2.1.0
+numpy>=1.26.0
+
+# Tables - AgGrid
+streamlit-aggrid>=1.0.0
+
+# Charts & Visualization
+plotly>=5.18.0
+
+# Form Validation
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+email-validator>=2.1.0
+
+# Environment & Configuration
+python-dotenv>=1.0.0
+
+# HTTP Requests (for MS Graph API calls)
+requests>=2.31.0
+httpx>=0.27.0
+
+# Utilities
+streamlit-option-menu>=0.3.12
+
+# Export capabilities
+openpyxl>=3.1.0
+xlsxwriter>=3.1.0
