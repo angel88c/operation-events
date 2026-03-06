@@ -37,9 +37,13 @@ COPY . .
 # The .streamlit/config.toml is copied from the project (via COPY . .)
 # It already includes server, theme, browser, and client settings.
 
+# 1. Asegúrate de que el puerto coincida
 EXPOSE 3001
 
+# 2. Corregimos el HEALTHCHECK para que apunte al puerto correcto
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:3001/_stcore/health || exit 1
 
-ENTRYPOINT ["streamlit", "run", "app.py"]
+# 3. IMPORTANTE: Agregamos los flags necesarios para que Streamlit 
+# acepte conexiones externas en el puerto 3001
+ENTRYPOINT ["streamlit", "run", "app.py", "--server.port=3001", "--server.address=0.0.0.0"]
