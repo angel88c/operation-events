@@ -268,7 +268,7 @@ def _save_changes(original_df: pd.DataFrame, edited_df: pd.DataFrame) -> int:
     all_changed_cells: dict[str, dict[str, bool]] = {}
 
     # Track responsable changes for email notifications
-    responsable_changes: list[tuple[str, dict[str, Any], str, str]] = []
+    responsable_changes: list[tuple[str, dict[str, Any], str, str, str]] = []
 
     for _, edited_row in edited_df.iterrows():
         row_id = str(edited_row.get("id", ""))
@@ -310,9 +310,15 @@ def _save_changes(original_df: pd.DataFrame, edited_df: pd.DataFrame) -> int:
                 cell_key = f"{row_id}_{key}"
                 row_changed_cells[cell_key] = True
 
-                # Track responsable changes for email notification
+                # Track responsable changes for email notifications
                 if key == "responsable" and new_str and old_str and new_str != old_str:
-                    responsable_changes.append((row_id, orig_row, old_str, new_str))
+                    # Also capture any comment changes for this row
+                    new_comments = ""
+                    if "comentarios" in edited_df.columns:
+                        comment_val = edited_row["comentarios"] if "comentarios" in edited_row else ""
+                        new_comments = str(comment_val).strip() if pd.notna(comment_val) else ""
+                    
+                    responsable_changes.append((row_id, orig_row, old_str, new_str, new_comments))
 
         if changes:
             success = update_event(row_id, changes)
@@ -330,8 +336,10 @@ def _save_changes(original_df: pd.DataFrame, edited_df: pd.DataFrame) -> int:
 
     # Send email notifications for responsable changes
     if responsable_changes:
-        for row_id, event_data, old_resp, new_resp in responsable_changes:
+        for row_id, event_data, old_resp, new_resp, new_comments in responsable_changes:
             st.info(f"🔍 Depuración: Cambiando responsable de '{old_resp}' a '{new_resp}'")
+            if new_comments:
+                st.info(f"💬 Comentarios actualizados: '{new_comments}'")
             
             user_info = _get_user_email_by_name(new_resp)
             if user_info:
@@ -344,6 +352,7 @@ def _save_changes(original_df: pd.DataFrame, edited_df: pd.DataFrame) -> int:
                         new_responsable_email=email,
                         new_responsable_name=name,
                         old_responsable=old_resp,
+                        new_comments=new_comments,
                     )
                 if email_ok:
                     st.success(f"📧 {email_msg}")

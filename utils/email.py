@@ -62,7 +62,7 @@ def _get_app_token() -> str | None:
 # Email Template
 # ======================================================================
 
-def _build_assignment_email_html(event_data: dict[str, Any], old_responsable: str = "", new_responsable: str = "") -> str:
+def _build_assignment_email_html(event_data: dict[str, Any], old_responsable: str = "", new_responsable: str = "", new_comments: str = "") -> str:
     """Build HTML email for responsable assignment changes."""
     settings = get_settings()
     app_url = settings.app_url or "http://localhost:3001"
@@ -72,8 +72,8 @@ def _build_assignment_email_html(event_data: dict[str, Any], old_responsable: st
     causa = event_data.get("causa", "N/A")
     numero_proyecto = event_data.get("numero_proyecto", "N/A")
     numero_parte = event_data.get("numero_parte", "N/A")
-    responsable = event_data.get("responsable", "N/A")
-    comentarios = event_data.get("comentarios", "—")
+    responsable = new_responsable or event_data.get("responsable", "N/A")
+    comentarios = new_comments or event_data.get("comentarios", "—")
     fecha = event_data.get("fecha_hallazgo", "N/A")
     if hasattr(fecha, "strftime"):
         fecha = fecha.strftime("%d/%m/%Y %H:%M")
@@ -86,6 +86,9 @@ def _build_assignment_email_html(event_data: dict[str, Any], old_responsable: st
         "Falta de Material": "#8764B8",
     }
     accent_color = impact_colors.get(tipo_impacto, "#0078D4")
+
+    # Highlight updated comments if provided
+    comments_section = ""
 
     return f"""
     <!DOCTYPE html>
@@ -138,6 +141,8 @@ def _build_assignment_email_html(event_data: dict[str, Any], old_responsable: st
                             </td>
                         </tr>
 
+                        {comments_section}
+
                         <!-- Event Details -->
                         <tr>
                             <td style="padding:20px 32px;">
@@ -160,7 +165,7 @@ def _build_assignment_email_html(event_data: dict[str, Any], old_responsable: st
                                     </tr>
                                     <tr style="background:#fafafa;">
                                         <td style="padding:10px 16px; font-size:13px; color:#666; border-bottom:1px solid #e0e0e0;">Nuevo Responsable</td>
-                                        <td style="padding:10px 16px; font-size:13px; color:#333; border-bottom:1px solid #e0e0e0; font-weight:600;">{new_responsable}</td>
+                                        <td style="padding:10px 16px; font-size:13px; color:#333; border-bottom:1px solid #e0e0e0; font-weight:600;">{responsable}</td>
                                     </tr>
                                     <tr>
                                         <td style="padding:10px 16px; font-size:13px; color:#666; border-bottom:1px solid #e0e0e0;">Fecha</td>
@@ -168,7 +173,7 @@ def _build_assignment_email_html(event_data: dict[str, Any], old_responsable: st
                                     </tr>
                                     <tr style="background:#fafafa;">
                                         <td style="padding:10px 16px; font-size:13px; color:#666;">Comentarios</td>
-                                        <td style="padding:10px 16px; font-size:13px; color:#333;">{comentarios if comentarios else '—'}</td>
+                                        <td style="padding:10px 16px; font-size:13px; color:#333; font-weight:500;">{comentarios if comentarios else '—'}</td>
                                     </tr>
                                 </table>
                             </td>
@@ -336,6 +341,7 @@ def send_assignment_notification(
     new_responsable_email: str,
     new_responsable_name: str,
     old_responsable: str = "",
+    new_comments: str = "",
 ) -> tuple[bool, str]:
     """
     Send an email notification when a responsable is reassigned.
@@ -345,6 +351,7 @@ def send_assignment_notification(
         new_responsable_email: Email address of the new responsable.
         new_responsable_name: Display name of the new responsable.
         old_responsable: Name of the previous responsable.
+        new_comments: Updated comments for the event.
 
     Returns:
         Tuple of (success: bool, message: str).
@@ -362,7 +369,7 @@ def send_assignment_notification(
     numero_proyecto = event_data.get("numero_proyecto", "")
     subject = f"[Operation Events] REASIGNADO: {tipo_impacto} — Proyecto {numero_proyecto}"
 
-    html_body = _build_assignment_email_html(event_data, old_responsable, new_responsable_name)
+    html_body = _build_assignment_email_html(event_data, old_responsable, new_responsable_name, new_comments)
 
     payload = {
         "message": {
