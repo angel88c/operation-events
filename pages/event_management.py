@@ -18,15 +18,18 @@ Referencia: specs/operation-events.md — RF-002, Milestone 3
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pandas as pd
 import streamlit as st
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
 
+from auth.graph_users import fetch_domain_users
 from components.navigation import render_page_header
 from config.settings import get_settings
 from config.theme import theme
+from utils.email import send_assignment_notification
 from utils.sharepoint import get_all_events, update_event
 
 
@@ -44,8 +47,8 @@ COLUMN_CONFIG = [
     ("causa",             "Causa",                 False, 150),
     ("numero_proyecto",   "Proyecto",              False, 110),
     ("numero_parte",      "Parte/Plano",           False, 120),
-    ("responsable",       "Responsable",           False, 140),
-    ("comentarios",       "Comentarios",           False, 160),
+    ("responsable",       "Responsable",           True,  140),
+    ("comentarios",       "Comentarios",           True,  160),
     ("fecha_hallazgo",    "Fecha Hallazgo",        False, 120),
     ("accion_correctiva", "Acción Correctiva",     True,  200),
     ("accion_preventiva", "Acción Preventiva",     True,  200),
@@ -59,6 +62,47 @@ COLUMN_CONFIG = [
 # Data Loading
 # ======================================================================
 
+def _get_users_for_dropdown() -> list[str]:
+    """Fetch users and return as dropdown options."""
+    settings = get_settings()
+    domain = settings.user_domain
+    
+    try:
+        users = fetch_domain_users(domain=domain, use_client_credentials=True)
+        user_options = [user.get("displayName", "") for user in users if user.get("displayName")]
+        return sorted(user_options)
+    except Exception as e:
+        st.warning(f"No se pudieron cargar los usuarios: {e}")
+        return []
+
+def _get_user_email_by_name(user_name: str) -> tuple[str, str] | None:
+    """Get user email and display name by display name."""
+    if not user_name:
+        return None
+    
+    settings = get_settings()
+    domain = settings.user_domain
+    
+    try:
+        users = fetch_domain_users(domain=domain, use_client_credentials=True)
+        for user in users:
+            display_name = user.get("displayName", "")
+            # Try exact match first
+            if display_name == user_name:
+                email = user.get("mail") or user.get("userPrincipalName", "")
+                if email:
+                    return email, display_name
+            # Try case-insensitive match as fallback
+            elif display_name.lower() == user_name.lower():
+                email = user.get("mail") or user.get("userPrincipalName", "")
+                if email:
+                    return email, display_name
+    except Exception as e:
+        st.error(f"Error buscando usuario: {e}")
+    
+    return None
+
+
 def _load_events() -> pd.DataFrame:
     """Fetch events from SharePoint and return as DataFrame."""
     events = get_all_events()
@@ -71,6 +115,10 @@ def _load_events() -> pd.DataFrame:
     for key, _, _, _ in COLUMN_CONFIG:
         if key not in df.columns:
             df[key] = ""
+
+    # Add column to track changed cells
+    if "changed_cells" not in df.columns:
+        df["changed_cells"] = "{}"
 
     # Order columns
     col_order = [c[0] for c in COLUMN_CONFIG]
@@ -88,6 +136,9 @@ def _build_grid_options(df: pd.DataFrame) -> dict:
     """Build AgGrid options with editable columns."""
     gb = GridOptionsBuilder.from_dataframe(df)
 
+    # Get users for dropdown
+    user_options = _get_users_for_dropdown()
+
     # Default column settings: no wrap, single line
     gb.configure_default_column(
         resizable=True,
@@ -97,6 +148,42 @@ def _build_grid_options(df: pd.DataFrame) -> dict:
         wrapText=False,
         autoHeight=False,
     )
+
+    # JavaScript function for cell styling
+    js_style_function = """
+    function(params) {
+        // Parse changed cells from the row data
+        let changedCells = {};
+        try {
+            changedCells = JSON.parse(params.data.changed_cells || '{}');
+        } catch(e) {
+            changedCells = {};
+        }
+        
+        // Check if this cell was changed
+        const rowId = params.data.id;
+        const colKey = params.colDef.field;
+        const cellKey = rowId + '_' + colKey;
+        
+        if (changedCells[cellKey]) {
+            return {
+                backgroundColor: '#e3f2fd',
+                color: '#1565c0',
+                fontWeight: 'bold'
+            };
+        }
+        
+        // Default style for editable cells
+        if (params.colDef.editable) {
+            return {
+                backgroundColor: '#f0f7ff',
+                borderLeft: '2px solid #0078D4'
+            };
+        }
+        
+        return {};
+    }
+    """
 
     # Configure each column
     for key, label, editable, width in COLUMN_CONFIG:
@@ -114,6 +201,11 @@ def _build_grid_options(df: pd.DataFrame) -> dict:
             col_opts["cellEditor"] = "agSelectCellEditor"
             col_opts["cellEditorParams"] = {"values": STATUS_OPTIONS}
 
+        # Responsable column: dropdown editor with users
+        if key == "responsable":
+            col_opts["cellEditor"] = "agSelectCellEditor"
+            col_opts["cellEditorParams"] = {"values": user_options}
+
         # Date columns: format nicely
         if key in ("fecha_hallazgo", "fecha_plan", "fecha_real_cierre"):
             col_opts["type"] = ["dateColumnFilter"]
@@ -123,14 +215,14 @@ def _build_grid_options(df: pd.DataFrame) -> dict:
             col_opts["wrapText"] = True
             col_opts["autoHeight"] = True
 
-        # Highlight editable columns
-        if editable:
-            style = col_opts.get("cellStyle", {})
-            style["backgroundColor"] = "#f0f7ff"
-            style["borderLeft"] = "2px solid #0078D4"
-            col_opts["cellStyle"] = style
+        # Apply style function to all columns
+        col_opts["cellStyle"] = {"styleFunction": js_style_function}
 
         gb.configure_column(key, **col_opts)
+
+    # Hide the changed_cells tracking column
+    if "changed_cells" in df.columns:
+        gb.configure_column("changed_cells", hide=True)
 
     # Selection
     gb.configure_selection(
@@ -156,6 +248,8 @@ def _build_grid_options(df: pd.DataFrame) -> dict:
 def _save_changes(original_df: pd.DataFrame, edited_df: pd.DataFrame) -> int:
     """
     Compare original and edited DataFrames, save changes to SharePoint.
+    Also marks changed cells with special styling and sends email notifications
+    when responsable is changed.
 
     Returns:
         Number of rows successfully updated.
@@ -170,6 +264,12 @@ def _save_changes(original_df: pd.DataFrame, edited_df: pd.DataFrame) -> int:
         if rid:
             orig_by_id[rid] = row.to_dict()
 
+    # Track all changed cells for styling
+    all_changed_cells: dict[str, dict[str, bool]] = {}
+
+    # Track responsable changes for email notifications
+    responsable_changes: list[tuple[str, dict[str, Any], str, str]] = []
+
     for _, edited_row in edited_df.iterrows():
         row_id = str(edited_row.get("id", ""))
         if not row_id or row_id not in orig_by_id:
@@ -177,6 +277,17 @@ def _save_changes(original_df: pd.DataFrame, edited_df: pd.DataFrame) -> int:
 
         orig_row = orig_by_id[row_id]
         changes: dict[str, Any] = {}
+        row_changed_cells: dict[str, bool] = {}
+
+        # Load existing changed cells for this row
+        try:
+            existing_changed = edited_row.get("changed_cells", "{}")
+            if isinstance(existing_changed, str):
+                existing_changed = json.loads(existing_changed)
+            else:
+                existing_changed = existing_changed
+        except:
+            existing_changed = {}
 
         for key in editable_keys:
             if key not in edited_df.columns:
@@ -195,11 +306,61 @@ def _save_changes(original_df: pd.DataFrame, edited_df: pd.DataFrame) -> int:
 
             if new_str != old_str:
                 changes[key] = new_str if new_str else None
+                # Mark this cell as changed
+                cell_key = f"{row_id}_{key}"
+                row_changed_cells[cell_key] = True
+
+                # Track responsable changes for email notification
+                if key == "responsable" and new_str and old_str and new_str != old_str:
+                    responsable_changes.append((row_id, orig_row, old_str, new_str))
 
         if changes:
             success = update_event(row_id, changes)
             if success:
                 updated_count += 1
+                # Merge with existing changed cells
+                all_changed_cells[row_id] = {**existing_changed, **row_changed_cells}
+
+    # Update the DataFrame with changed cells for styling
+    if all_changed_cells:
+        for idx, row in edited_df.iterrows():
+            row_id = str(row.get("id", ""))
+            if row_id in all_changed_cells:
+                edited_df.at[idx, "changed_cells"] = json.dumps(all_changed_cells[row_id])
+
+    # Send email notifications for responsable changes
+    if responsable_changes:
+        for row_id, event_data, old_resp, new_resp in responsable_changes:
+            st.info(f"🔍 Depuración: Cambiando responsable de '{old_resp}' a '{new_resp}'")
+            
+            user_info = _get_user_email_by_name(new_resp)
+            if user_info:
+                email, name = user_info
+                st.info(f"📧 Enviando notificación a: {name} ({email})")
+                
+                with st.spinner(f"Enviando notificación a {new_resp}..."):
+                    email_ok, email_msg = send_assignment_notification(
+                        event_data=event_data,
+                        new_responsable_email=email,
+                        new_responsable_name=name,
+                        old_responsable=old_resp,
+                    )
+                if email_ok:
+                    st.success(f"📧 {email_msg}")
+                else:
+                    st.warning(f"⚠️ Cambio guardado pero no se pudo enviar email: {email_msg}")
+            else:
+                st.warning(f"⚠️ No se encontró email para el nuevo responsable: {new_resp}")
+                
+                # Mostrar usuarios disponibles para depuración
+                settings = get_settings()
+                domain = settings.user_domain
+                try:
+                    users = fetch_domain_users(domain=domain, use_client_credentials=True)
+                    available_names = [user.get("displayName", "") for user in users if user.get("displayName")]
+                    st.info(f"📋 Usuarios disponibles: {', '.join(available_names[:10])}...")
+                except:
+                    pass
 
     return updated_count
 
@@ -310,7 +471,8 @@ def render() -> None:
         fit_columns_on_grid_load=False,
         height=min(400 + len(filtered_df) * 10, 700),
         theme="streamlit",
-        allow_unsafe_jscode=False,
+        allow_unsafe_jscode=True,
+        enable_enterprise_modules=False,
     )
 
     # --- Save Logic ---
@@ -322,9 +484,9 @@ def render() -> None:
                 count = _save_changes(original, edited_data)
             if count > 0:
                 st.success(f"✅ {count} evento(s) actualizado(s) exitosamente.")
-                # Refresh data
-                st.session_state.pop("events_df", None)
-                st.session_state.pop("events_df_original", None)
+                # Update session state with the edited data (including changed cells)
+                st.session_state["events_df"] = edited_data
+                st.session_state["events_df_original"] = edited_data.copy()
                 st.rerun()
             else:
                 st.info("ℹ️ No se detectaron cambios para guardar.")

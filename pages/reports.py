@@ -452,7 +452,14 @@ def render() -> None:
         closed_events = filtered.dropna(subset=["fecha_hallazgo", "fecha_real_cierre"])
         if not closed_events.empty:
             cierre = pd.to_datetime(closed_events["fecha_real_cierre"], errors="coerce")
-            hallazgo = closed_events["fecha_hallazgo"]
+            hallazgo = pd.to_datetime(closed_events["fecha_hallazgo"], errors="coerce")
+            
+            # Strip timezone info for both to avoid tz-aware/tz-naive mismatch
+            if hasattr(cierre.dtype, 'tz') and cierre.dt.tz is not None:
+                cierre = cierre.dt.tz_localize(None)
+            if hasattr(hallazgo.dtype, 'tz') and hallazgo.dt.tz is not None:
+                hallazgo = hallazgo.dt.tz_localize(None)
+                
             deltas = (cierre - hallazgo).dt.days
             deltas = deltas.dropna()
             if len(deltas) > 0:
