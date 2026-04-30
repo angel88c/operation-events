@@ -43,7 +43,8 @@ class Settings(BaseSettings):
 
     # --- Email Notifications ---
     email_sender: str = Field(default="", description="Email address to send notifications from (must have Send.Mail permission)")
-    app_url: str = Field(default="http://localhost:3001", description="App URL for email links")
+    #app_url: str = Field(default="http://localhost:3001", description="App URL for email links")
+    app_url: str = Field(default="https://curso-n8n-gestion-eventos.evr7pw.easypanel.host", description="App URL for email links")
 
     # --- Application ---
     app_name: str = Field(default="Operation Events", description="Application display name")

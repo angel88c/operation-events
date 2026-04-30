@@ -65,7 +65,7 @@ def _get_app_token() -> str | None:
 def _build_assignment_email_html(event_data: dict[str, Any], old_responsable: str = "", new_responsable: str = "", new_comments: str = "") -> str:
     """Build HTML email for responsable assignment changes."""
     settings = get_settings()
-    app_url = settings.app_url or "http://localhost:3001"
+    app_url = settings.app_url or "https://curso-n8n-gestion-eventos.evr7pw.easypanel.host"
 
     persona = event_data.get("persona_detecta", "N/A")
     tipo_impacto = event_data.get("tipo_impacto", "N/A")
@@ -209,7 +209,7 @@ def _build_assignment_email_html(event_data: dict[str, Any], old_responsable: st
 def _build_email_html(event_data: dict[str, Any]) -> str:
     """Build a professional HTML email body with event details."""
     settings = get_settings()
-    app_url = settings.app_url or "http://localhost:3001"
+    app_url = settings.app_url or "https://curso-n8n-gestion-eventos.evr7pw.easypanel.host"
 
     persona = event_data.get("persona_detecta", "N/A")
     tipo_impacto = event_data.get("tipo_impacto", "N/A")
